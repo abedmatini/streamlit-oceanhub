@@ -152,10 +152,10 @@ with col2:
     # Initialize chat history in session state
     if "messages" not in st.session_state:
         st.session_state.messages = []
-        # Add welcome message
+        # Add welcome message with data info
         st.session_state.messages.append({
             "role": "assistant",
-            "content": f"👋 Hello! I'm your AI assistant powered by Google Gemini. I can help you understand the LMMA data.\n\n📊 Currently loaded: **{len(gdf)} LMMA features**\n\nAsk me anything about marine conservation, the map data, or LMMAs!"
+            "content": f"👋 Hello! I'm your AI assistant powered by Google Gemini, and I'm aware of the LMMA data you're viewing.\n\n📊 **Current Data:**\n- **{total_features} LMMA features** loaded\n- **{len(countries)} countries**: {', '.join(countries[:3])}{'...' if len(countries) > 3 else ''}\n- Covering the **Western Indian Ocean** region\n\n💡 **Try asking me:**\n- \"How many LMMAs are in [country name]?\"\n- \"What countries have the most LMMAs?\"\n- \"Explain what an LMMA is\"\n- \"Why are LMMAs important?\""
         })
     
     # Display chat messages in a container
@@ -184,8 +184,11 @@ with col2:
                     # Show typing indicator
                     message_placeholder.markdown("💭 Thinking...")
                     
+                    # Combine context with user prompt
+                    full_prompt = f"{data_context}\n\nUser Question: {prompt}"
+                    
                     # Generate response from Gemini
-                    response = model.generate_content(prompt)
+                    response = model.generate_content(full_prompt)
                     
                     # Extract text from response
                     if response and response.text:
@@ -209,11 +212,26 @@ with col2:
     
     # Add helpful info below chat
     st.divider()
-    st.caption("💡 **Tips:**")
-    st.caption("• Ask about marine conservation")
-    st.caption("• Inquire about LMMA features")
-    st.caption("• Request explanations about the data")
-    st.caption(f"• {len(st.session_state.messages)} messages in history")
+    
+    # Example prompts
+    st.caption("💡 **Example Questions:**")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("📊 Data stats", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "What countries have the most LMMAs?"})
+            st.rerun()
+        if st.button("🌊 What is LMMA?", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "What is an LMMA and why is it important?"})
+            st.rerun()
+    with col_b:
+        if st.button("🗺️ Coverage area", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "What geographic area does this data cover?"})
+            st.rerun()
+        if st.button("🐠 Conservation", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "How do LMMAs help marine conservation?"})
+            st.rerun()
+    
+    st.caption(f"📝 {len(st.session_state.messages)} messages in history")
 
 # ── Debug Info (collapsible) ──────────────────────────────────────────────────
 with st.expander("🔧 Debug Information"):
