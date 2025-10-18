@@ -3,7 +3,9 @@
 ## 🎉 What Was Added:
 
 ### **1. requirements.txt File**
+
 Created with all necessary packages and version specifications:
+
 - streamlit >= 1.28.0
 - geopandas >= 0.14.0
 - shapely >= 2.0.0
@@ -13,13 +15,16 @@ Created with all necessary packages and version specifications:
 - pandas >= 2.0.0
 
 ### **2. Updated README.md**
+
 - Added "Option A: Using requirements.txt (Recommended)" in Step 3
 - Added "Option B: Manual Installation" as alternative
 - Updated Quick Start Summary with `pip install -r requirements.txt`
 - Updated Project Structure to include requirements.txt
 
 ### **3. Created REQUIREMENTS_GUIDE.md**
+
 Comprehensive guide covering:
+
 - What is requirements.txt
 - How to use it
 - Different installation methods
@@ -32,11 +37,13 @@ Comprehensive guide covering:
 ## 🚀 How to Use (Quick Reference)
 
 ### **Simple Installation:**
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### **Full Setup from Scratch:**
+
 ```bash
 # 1. Clone/navigate to project
 cd streamlit-oceanhub
@@ -80,17 +87,21 @@ streamlit run streamlit_map.py
 ## 🎯 What Users See Now:
 
 ### **In README.md Step 3:**
+
 ```markdown
 ### Step 3: Install Dependencies
 
 #### Option A: Using requirements.txt (Recommended) ⭐
+
 pip install -r requirements.txt
 
 #### Option B: Manual Installation
+
 pip install streamlit geopandas pydeck google-generativeai python-dotenv
 ```
 
 ### **In Quick Start Summary:**
+
 ```bash
 # 4. Install dependencies (RECOMMENDED)
 pip install -r requirements.txt
@@ -101,6 +112,7 @@ pip install -r requirements.txt
 ## ✨ Professional Setup Complete!
 
 Your project now has:
+
 - ✅ Professional requirements.txt
 - ✅ Clear installation instructions
 - ✅ Multiple installation options

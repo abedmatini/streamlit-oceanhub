@@ -47,22 +47,27 @@ Our `requirements.txt` includes:
 ## 🔄 Different Ways to Install
 
 ### **Method 1: From requirements.txt (BEST)**
+
 ```bash
 pip install -r requirements.txt
 ```
+
 ✅ Installs exact versions specified
 ✅ Reproducible across environments
 ✅ One command for everything
 
 ### **Method 2: Manual Installation**
+
 ```bash
 pip install streamlit geopandas pydeck google-generativeai python-dotenv
 ```
+
 ⚠️ May install different versions
 ⚠️ Longer command
 ⚠️ Easy to miss a package
 
 ### **Method 3: Individual Packages**
+
 ```bash
 pip install streamlit
 pip install geopandas
@@ -70,6 +75,7 @@ pip install pydeck
 pip install google-generativeai
 pip install python-dotenv
 ```
+
 ❌ Very tedious
 ❌ Multiple commands
 ❌ Not recommended
@@ -79,21 +85,25 @@ pip install python-dotenv
 ## 💡 Pro Tips
 
 ### **Upgrade pip first:**
+
 ```bash
 pip install --upgrade pip
 ```
 
 ### **Check what's installed:**
+
 ```bash
 pip list
 ```
 
 ### **Verify a specific package:**
+
 ```bash
 pip show streamlit
 ```
 
 ### **Uninstall everything (if needed):**
+
 ```bash
 pip freeze > temp.txt
 pip uninstall -r temp.txt -y
@@ -127,21 +137,25 @@ streamlit run streamlit_map.py
 ## ❓ Troubleshooting
 
 ### **"No such file: requirements.txt"**
+
 - Make sure you're in the project directory
 - Run: `ls` (macOS/Linux) or `dir` (Windows)
 - You should see `requirements.txt` in the list
 
 ### **"Could not find a version..."**
+
 - Update pip: `pip install --upgrade pip`
 - Check your Python version: `python --version` (need 3.8+)
 - Try installing manually if one package fails
 
 ### **"Permission denied"**
+
 - On Linux/Mac, try: `pip install --user -r requirements.txt`
 - Or use: `sudo pip install -r requirements.txt` (not recommended)
 - Better: Use a virtual environment!
 
 ### **Packages take forever to install**
+
 - This is normal for `geopandas` (has many dependencies)
 - Be patient, especially on first install
 - Subsequent installs are faster (cached)

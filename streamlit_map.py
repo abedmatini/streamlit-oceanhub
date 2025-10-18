@@ -56,6 +56,10 @@ def load_lmma_data():
     gdf = gpd.read_file("wio_lmma_ioc.shp")
     if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(epsg=4326)
+    # Simplify only valid geometries for performance
+    gdf.loc[gdf.geometry.is_valid, 'geometry'] = gdf.loc[gdf.geometry.is_valid, 'geometry'].simplify(
+        tolerance=0.002, preserve_topology=True
+    )
     return gdf
 
 @st.cache_data(show_spinner="🔄 Loading MPA data...")
@@ -64,6 +68,10 @@ def load_mpa_data():
     gdf = gpd.read_file("wio_mpa_ioc.shp")
     if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(epsg=4326)
+    # Simplify only valid geometries for performance
+    gdf.loc[gdf.geometry.is_valid, 'geometry'] = gdf.loc[gdf.geometry.is_valid, 'geometry'].simplify(
+        tolerance=0.002, preserve_topology=True
+    )
     return gdf
 
 # Check if files exist
@@ -78,20 +86,42 @@ if not os.path.exists(mpa_shapefile):
     st.error(f"❌ Could not find '{mpa_shapefile}'. Place all shapefile components in the same directory.")
     st.stop()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 🚀 PERFORMANCE OPTIMIZATION: Cache GeoJSON conversion
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data
+def convert_to_geojson(_gdf, cache_key):
+    """Convert GeoDataFrame to GeoJSON format (cached for performance)
+    
+    Note: _gdf has underscore prefix to tell Streamlit not to hash it
+    cache_key is used to differentiate between different GeoDataFrames
+    """
+    return _gdf.__geo_interface__
+
+@st.cache_data
+def calculate_map_center(_gdf_lmma, _gdf_mpa):
+    """Calculate map center from combined bounds (cached for performance)
+    
+    Note: _gdf parameters have underscore prefix (not hashable)
+    Returns: (mid_lat, mid_lon, minx, miny, maxx, maxy)
+    """
+    all_bounds = gpd.GeoDataFrame(pd.concat([_gdf_lmma, _gdf_mpa], ignore_index=True))
+    minx, miny, maxx, maxy = all_bounds.total_bounds
+    mid_lat = (miny + maxy) / 2
+    mid_lon = (minx + maxx) / 2
+    return mid_lat, mid_lon, minx, miny, maxx, maxy
+
 # Load data with caching (only loads once, then reuses)
 with st.spinner("🌊 Loading marine conservation data..."):
     gdf_lmma = load_lmma_data()
     gdf_mpa = load_mpa_data()
 
-# Convert to GeoJSON
-geojson_lmma = gdf_lmma.__geo_interface__
-geojson_mpa = gdf_mpa.__geo_interface__
+# Convert to GeoJSON (cached - only converts once per dataset!)
+geojson_lmma = convert_to_geojson(gdf_lmma, "lmma")
+geojson_mpa = convert_to_geojson(gdf_mpa, "mpa")
 
-# Calculate map center from combined bounds
-all_bounds = gpd.GeoDataFrame(pd.concat([gdf_lmma, gdf_mpa], ignore_index=True))
-minx, miny, maxx, maxy = all_bounds.total_bounds
-mid_lat = (miny + maxy) / 2
-mid_lon = (minx + maxx) / 2
+# Calculate map center from combined bounds (cached!)
+mid_lat, mid_lon, minx, miny, maxx, maxy = calculate_map_center(gdf_lmma, gdf_mpa)
 
 # ── Prepare context about the data for AI ─────────────────────────────────────
 # Get summary statistics for LMMAs
