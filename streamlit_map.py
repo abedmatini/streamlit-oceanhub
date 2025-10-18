@@ -5,16 +5,18 @@ from dotenv import load_dotenv
 import geopandas as gpd
 import streamlit as st
 import pydeck as pdk
+import google.generativeai as genai
 
 # ── streamlit page setup ──────────────────────────────────────────────────────
 st.set_page_config(page_title="WIO LMMA IOC Map with AI Assistant", layout="wide")
 st.title("🌊 WIO LMMA IOC Map with AI Assistant")
 
-# ── read Mapbox token from .env ───────────────────────────────────────────────
+# ── read API keys from .env ───────────────────────────────────────────────────
 env_path = os.path.join(os.getcwd(), ".env")
 load_dotenv(dotenv_path=env_path, override=True)
 
 MAPBOX_API_KEY = os.getenv("MAPBOX_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Manual fallback if load_dotenv fails
 if not MAPBOX_API_KEY:
@@ -23,7 +25,8 @@ if not MAPBOX_API_KEY:
             for line in f:
                 if line.strip().startswith('MAPBOX_API_KEY='):
                     MAPBOX_API_KEY = line.strip().split('=', 1)[1]
-                    break
+                if line.strip().startswith('GEMINI_API_KEY='):
+                    GEMINI_API_KEY = line.strip().split('=', 1)[1]
     except Exception:
         pass
 
@@ -31,7 +34,19 @@ if not MAPBOX_API_KEY:
     st.error("❌ MAPBOX_API_KEY is missing. Add it to your .env file and restart Streamlit.")
     st.stop()
 
+if not GEMINI_API_KEY:
+    st.error("❌ GEMINI_API_KEY is missing. Add it to your .env file and restart Streamlit.")
+    st.stop()
+
 os.environ["MAPBOX_API_KEY"] = MAPBOX_API_KEY
+
+# ── Initialize Gemini AI ──────────────────────────────────────────────────────
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-2.5-flash')
+except Exception as e:
+    st.error(f"❌ Failed to initialize Gemini AI: {e}")
+    st.stop()
 
 # ── load shapefile ────────────────────────────────────────────────────────────
 shapefile_path = "wio_lmma_ioc.shp"
@@ -51,6 +66,46 @@ geojson = gdf.__geo_interface__
 minx, miny, maxx, maxy = gdf.total_bounds
 mid_lat = (miny + maxy) / 2
 mid_lon = (minx + maxx) / 2
+
+# ── Prepare context about the data for AI ─────────────────────────────────────
+# Get summary statistics
+total_features = len(gdf)
+countries = gdf['Country'].unique().tolist() if 'Country' in gdf.columns else []
+country_counts = gdf['Country'].value_counts().to_dict() if 'Country' in gdf.columns else {}
+
+# Get column names and sample data
+columns_info = list(gdf.columns)
+columns_info.remove('geometry') if 'geometry' in columns_info else None
+
+# Create context string for AI
+data_context = f"""
+You are an AI assistant helping users understand LMMA (Locally Managed Marine Area) data from the Western Indian Ocean region.
+
+CURRENT DATA LOADED:
+- Total LMMA features: {total_features}
+- Countries represented: {', '.join(countries)}
+- Data coverage: Western Indian Ocean (WIO) region
+- Coordinate bounds: Lat({miny:.2f} to {maxy:.2f}), Lon({minx:.2f} to {maxx:.2f})
+
+COUNTRY BREAKDOWN:
+{chr(10).join([f"- {country}: {count} LMMAs" for country, count in country_counts.items()])}
+
+DATA ATTRIBUTES:
+Available fields: {', '.join(columns_info)}
+
+ABOUT LMMAs:
+LMMAs (Locally Managed Marine Areas) are coastal zones where local communities play a key role in managing marine resources. They are important for:
+- Sustainable fisheries management
+- Marine biodiversity conservation
+- Community-based resource governance
+- Coastal ecosystem protection
+
+When answering questions:
+- Be specific about the data when users ask about numbers, countries, or locations
+- Explain marine conservation concepts clearly
+- Reference the actual data when relevant
+- Be helpful and educational about ocean conservation
+"""
 
 # ── create 2-column layout ────────────────────────────────────────────────────
 col1, col2 = st.columns([6, 4])  # 60% map, 40% chat
@@ -100,7 +155,7 @@ with col2:
         # Add welcome message
         st.session_state.messages.append({
             "role": "assistant",
-            "content": f"� Hello! I'm your AI assistant. I can help you understand the LMMA data.\n\n📊 Currently loaded: **{len(gdf)} LMMA features**\n\nAsk me anything!"
+            "content": f"👋 Hello! I'm your AI assistant powered by Google Gemini. I can help you understand the LMMA data.\n\n📊 Currently loaded: **{len(gdf)} LMMA features**\n\nAsk me anything about marine conservation, the map data, or LMMAs!"
         })
     
     # Display chat messages in a container
@@ -120,16 +175,34 @@ with col2:
             with st.chat_message("user"):
                 st.markdown(prompt)
         
-        # Generate echo response (temporary - will be replaced with Gemini in Step 3)
-        response = f"🔄 **Echo Bot Response:**\n\nYou said: _{prompt}_\n\n✨ This is a test response. Real AI coming in Step 3!"
-        
-        # Add assistant response to history
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        
-        # Display assistant response
+        # Generate AI response with Gemini
         with chat_container:
             with st.chat_message("assistant"):
-                st.markdown(response)
+                message_placeholder = st.empty()
+                
+                try:
+                    # Show typing indicator
+                    message_placeholder.markdown("💭 Thinking...")
+                    
+                    # Generate response from Gemini
+                    response = model.generate_content(prompt)
+                    
+                    # Extract text from response
+                    if response and response.text:
+                        ai_response = response.text
+                    else:
+                        ai_response = "I apologize, but I couldn't generate a response. Please try again."
+                    
+                    # Display the response
+                    message_placeholder.markdown(ai_response)
+                    
+                    # Add assistant response to history
+                    st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                    
+                except Exception as e:
+                    error_msg = f"❌ Error: {str(e)}\n\nPlease check your API key or try again."
+                    message_placeholder.markdown(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
         
         # Force rerun to update the display
         st.rerun()
@@ -137,8 +210,9 @@ with col2:
     # Add helpful info below chat
     st.divider()
     st.caption("💡 **Tips:**")
-    st.caption("• Try asking about the map data")
-    st.caption("• Real AI responses coming in Step 3")
+    st.caption("• Ask about marine conservation")
+    st.caption("• Inquire about LMMA features")
+    st.caption("• Request explanations about the data")
     st.caption(f"• {len(st.session_state.messages)} messages in history")
 
 # ── Debug Info (collapsible) ──────────────────────────────────────────────────
@@ -147,4 +221,6 @@ with st.expander("🔧 Debug Information"):
     st.write("**Shapefile CRS:**", gdf.crs)
     st.write("**Map Center:**", f"Lat: {mid_lat:.4f}, Lon: {mid_lon:.4f}")
     st.write("**Features Count:**", len(gdf))
-    st.write("**API Key Status:**", "✅ Loaded" if MAPBOX_API_KEY else "❌ Missing")
+    st.write("**Mapbox API:**", "✅ Loaded" if MAPBOX_API_KEY else "❌ Missing")
+    st.write("**Gemini API:**", "✅ Loaded" if GEMINI_API_KEY else "❌ Missing")
+    st.write("**Gemini Model:**", "gemini-2.5-flash")
