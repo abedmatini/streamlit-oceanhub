@@ -155,6 +155,147 @@ When answering questions:
 - Clarify which management approach (LMMA or MPA) when relevant
 """
 
+# ── SIDEBAR: Location Checker ─────────────────────────────────────────────────
+st.sidebar.header("📍 Check Your Location")
+st.sidebar.markdown("Enter coordinates to check if you're in a protected zone")
+
+# Initialize session state for coordinates
+if 'user_lat' not in st.session_state:
+    st.session_state.user_lat = -15.5
+if 'user_lon' not in st.session_state:
+    st.session_state.user_lon = 49.5
+
+# Example location buttons
+st.sidebar.markdown("**🎯 Quick Test Locations:**")
+col_btn1, col_btn2, col_btn3 = st.sidebar.columns(3)
+
+if col_btn1.button("🏝️ Madagascar", help="Test LMMA location"):
+    st.session_state.user_lat = -15.5
+    st.session_state.user_lon = 49.5
+    
+if col_btn2.button("🏖️ Seychelles", help="Test MPA location"):
+    st.session_state.user_lat = -4.6
+    st.session_state.user_lon = 55.5
+    
+if col_btn3.button("🌊 Ocean", help="Test open ocean"):
+    st.session_state.user_lat = -10.0
+    st.session_state.user_lon = 60.0
+
+st.sidebar.markdown("**Or enter manually:**")
+
+# Input fields for coordinates
+user_lat = st.sidebar.number_input(
+    "Latitude",
+    min_value=-90.0,
+    max_value=90.0,
+    value=st.session_state.user_lat,
+    step=0.1,
+    format="%.4f",
+    help="Enter latitude between -90 and 90",
+    key="lat_input"
+)
+
+user_lon = st.sidebar.number_input(
+    "Longitude",
+    min_value=-180.0,
+    max_value=180.0,
+    value=st.session_state.user_lon,
+    step=0.1,
+    format="%.4f",
+    help="Enter longitude between -180 and 180",
+    key="lon_input"
+)
+
+# Update session state
+st.session_state.user_lat = user_lat
+st.session_state.user_lon = user_lon
+
+# Check location button
+check_button = st.sidebar.button("🔍 Check Location", use_container_width=True, type="primary")
+
+# STEP 2: Spatial logic function
+def check_location(lat, lon, gdf_lmma, gdf_mpa):
+    """
+    Check if coordinates fall within any LMMA or MPA
+    
+    Args:
+        lat: Latitude
+        lon: Longitude
+        gdf_lmma: GeoDataFrame of LMMAs
+        gdf_mpa: GeoDataFrame of MPAs
+    
+    Returns:
+        dict with 'type', 'name', 'country', 'data' or None
+    """
+    from shapely.geometry import Point
+    
+    point = Point(lon, lat)  # Shapely uses (lon, lat) order
+    
+    # Check LMMAs first
+    lmma_match = gdf_lmma[gdf_lmma.geometry.contains(point)]
+    if not lmma_match.empty:
+        row = lmma_match.iloc[0]
+        return {
+            'type': 'LMMA',
+            'name': row['Name of LM'],
+            'country': row['Country'],
+            'year': row.get('Year Start', 'N/A'),
+            'area': row.get('Areas, Siz', 'N/A'),
+            'data': row
+        }
+    
+    # Check MPAs
+    mpa_match = gdf_mpa[gdf_mpa.geometry.contains(point)]
+    if not mpa_match.empty:
+        row = mpa_match.iloc[0]
+        return {
+            'type': 'MPA',
+            'name': row['NAME'],
+            'country': row['Country'],
+            'year': row.get('Year_estab', 'N/A'),
+            'category': row.get('IUCN_Categ', 'N/A'),
+            'data': row
+        }
+    
+    return None
+
+# STEP 3: Display results
+if check_button:
+    with st.spinner("🔍 Checking location..."):
+        result = check_location(user_lat, user_lon, gdf_lmma, gdf_mpa)
+        
+        if result:
+            st.sidebar.success("✅ Location Found!")
+            st.sidebar.markdown(f"""
+            **📍 You are in:**  
+            **{result['name']}**
+            
+            🏷️ **Type:** {result['type']} {'(Locally Managed Marine Area)' if result['type'] == 'LMMA' else '(Marine Protected Area)'}  
+            🌍 **Country:** {result['country']}  
+            📅 **Established:** {result.get('year', 'N/A')}  
+            📏 **Details:** {result.get('area', result.get('category', 'N/A'))}  
+            📊 **Coordinates:** {user_lat:.4f}, {user_lon:.4f}
+            """)
+            
+            # Store in session state for AI context AND pin display
+            st.session_state.last_checked_location = result
+            st.session_state.show_pin = True  # Flag to show pin
+            
+        else:
+            st.sidebar.warning("❌ Not in any protected zone")
+            st.sidebar.markdown(f"""
+            The coordinates **{user_lat:.4f}, {user_lon:.4f}** are not within any registered LMMA or MPA in our database.
+            
+            This could be:
+            - Open ocean
+            - Unprotected coastal area
+            - Outside the Western Indian Ocean region
+            """)
+            st.session_state.last_checked_location = None
+            st.session_state.show_pin = True  # Still show pin for not-found locations
+
+st.sidebar.divider()
+
 # ── create 2-column layout ────────────────────────────────────────────────────
 col1, col2 = st.columns([6, 4])  # 60% map, 40% chat
 
@@ -163,48 +304,83 @@ with col1:
     st.subheader("🗺️ Interactive Map")
     
     # Add legend
-    st.markdown("""
+    legend_text = """
     **Legend:**  
     🔵 **Blue** = LMMAs (Locally Managed Marine Areas) - {0} features  
     🟢 **Green** = MPAs (Marine Protected Areas) - {1} features
-    """.format(total_lmma, total_mpa))
+    """.format(total_lmma, total_mpa)
     
-    # Build Deck.gl map with two layers
+    # Add pin to legend if location was checked
+    if 'show_pin' in st.session_state and st.session_state.show_pin:
+        legend_text += "\n🔴 **Red Pin** = Your checked location ({:.4f}, {:.4f})".format(
+            st.session_state.user_lat, st.session_state.user_lon
+        )
+    
+    st.markdown(legend_text)
+    
+    # STEP 4: Prepare map layers
+    map_layers = [
+        # LMMA Layer (Blue)
+        pdk.Layer(
+            "GeoJsonLayer",
+            data=geojson_lmma,
+            stroked=True,
+            filled=True,
+            opacity=0.6,
+            get_fill_color=[82, 170, 225, 120],  # Ocean Blue
+            get_line_color=[12, 60, 90],
+            line_width_min_pixels=1,
+            pickable=True,
+        ),
+        # MPA Layer (Green)
+        pdk.Layer(
+            "GeoJsonLayer",
+            data=geojson_mpa,
+            stroked=True,
+            filled=True,
+            opacity=0.6,
+            get_fill_color=[46, 204, 113, 120],  # Emerald Green
+            get_line_color=[22, 160, 133],
+            line_width_min_pixels=1,
+            pickable=True,
+        ),
+    ]
+    
+    # STEP 4: Add red pin to map when location is checked
+    if 'show_pin' in st.session_state and st.session_state.show_pin:
+        if 'user_lat' in st.session_state and 'user_lon' in st.session_state:
+            pin_lat = st.session_state.user_lat
+            pin_lon = st.session_state.user_lon
+            
+            pin_layer = pdk.Layer(
+                "ScatterplotLayer",
+                data=[{
+                    "position": [pin_lon, pin_lat],
+                    "name": "📍 Your Checked Location"
+                }],
+                get_position="position",
+                get_fill_color=[255, 0, 0, 220],  # Bright Red
+                get_line_color=[150, 0, 0],  # Dark red border
+                get_radius=10000,  # 10km radius for better visibility
+                radius_min_pixels=10,  # Minimum 10 pixels
+                radius_max_pixels=30,  # Maximum 30 pixels
+                line_width_min_pixels=2,
+                pickable=True,
+                auto_highlight=True,
+            )
+            map_layers.append(pin_layer)
+    
+    # Build Deck.gl map with all layers
     deck = pdk.Deck(
         map_style="mapbox://styles/mapbox/light-v9",
         initial_view_state=pdk.ViewState(
             latitude=mid_lat,
             longitude=mid_lon,
-            zoom=3,
+            zoom=4,
             pitch=0,
         ),
-        layers=[
-            # LMMA Layer (Blue)
-            pdk.Layer(
-                "GeoJsonLayer",
-                data=geojson_lmma,
-                stroked=True,
-                filled=True,
-                opacity=0.6,
-                get_fill_color=[82, 170, 225, 120],  # Ocean Blue
-                get_line_color=[12, 60, 90],
-                line_width_min_pixels=1,
-                pickable=True,
-            ),
-            # MPA Layer (Green)
-            pdk.Layer(
-                "GeoJsonLayer",
-                data=geojson_mpa,
-                stroked=True,
-                filled=True,
-                opacity=0.6,
-                get_fill_color=[46, 204, 113, 120],  # Emerald Green
-                get_line_color=[22, 160, 133],
-                line_width_min_pixels=1,
-                pickable=True,
-            ),
-        ],
-        tooltip={"text": "LMMA: {Name of LM}\nMPA: {NAME}\nCountry: {Country}"},
+        layers=map_layers,
+        tooltip={"text": "LMMA: {Name of LM}\nMPA: {NAME}\nCountry: {Country}\nLocation: {name}"},
     )
     
     st.pydeck_chart(deck, use_container_width=True)
@@ -230,7 +406,7 @@ with col2:
         # Add welcome message with data info
         st.session_state.messages.append({
             "role": "assistant",
-            "content": f"👋 Hello! I'm your AI assistant powered by Google Gemini, and I'm aware of the marine conservation data you're viewing.\n\n📊 **Current Data:**\n- **{total_lmma} LMMAs** (Locally Managed Marine Areas)\n- **{total_mpa} MPAs** (Marine Protected Areas)\n- **{len(all_countries)} countries**: {', '.join(all_countries[:4])}{'...' if len(all_countries) > 4 else ''}\n- Covering the **Western Indian Ocean** region\n\n💡 **Try asking me:**\n- \"What's the difference between LMMA and MPA?\"\n- \"How many MPAs are in Seychelles?\"\n- \"Compare Madagascar's LMMAs and MPAs\"\n- \"Why are both types important?\""
+            "content": f"👋 Hello! I'm your AI assistant powered by Google Gemini, and I'm aware of the marine conservation data you're viewing.\n\n📊 **Current Data:**\n- **{total_lmma} LMMAs** (Locally Managed Marine Areas)\n- **{total_mpa} MPAs** (Marine Protected Areas)\n- **{len(all_countries)} countries**: {', '.join(all_countries[:4])}{'...' if len(all_countries) > 4 else ''}\n- Covering the **Western Indian Ocean** region\n\n� **New Feature:** Check if any coordinates are in a protected zone using the sidebar!\n\n�💡 **Try asking me:**\n- \"What's the difference between LMMA and MPA?\"\n- \"How many MPAs are in Seychelles?\"\n- \"Tell me about the location I just checked\"\n- \"Why are both types important?\""
         })
     
     # Display chat messages in a container
@@ -259,8 +435,31 @@ with col2:
                     # Show typing indicator
                     message_placeholder.markdown("💭 Thinking...")
                     
-                    # Combine context with user prompt
-                    full_prompt = f"{data_context}\n\nUser Question: {prompt}"
+                    # STEP 5: Add location checker context to AI
+                    location_context = ""
+                    if 'last_checked_location' in st.session_state and st.session_state.last_checked_location:
+                        loc = st.session_state.last_checked_location
+                        location_context = f"""
+
+RECENT LOCATION CHECK:
+The user just checked coordinates ({st.session_state.user_lat:.4f}, {st.session_state.user_lon:.4f}) and found:
+- Location: {loc['name']}
+- Type: {loc['type']} ({'Locally Managed Marine Area' if loc['type'] == 'LMMA' else 'Marine Protected Area'})
+- Country: {loc['country']}
+- Established: {loc.get('year', 'N/A')}
+- Additional Info: {loc.get('area', loc.get('category', 'N/A'))}
+
+The user can see a red pin on the map at this location. Be aware of this context when answering questions.
+"""
+                    elif 'last_checked_location' in st.session_state and st.session_state.last_checked_location is None:
+                        location_context = f"""
+
+RECENT LOCATION CHECK:
+The user checked coordinates ({st.session_state.user_lat:.4f}, {st.session_state.user_lon:.4f}) but it was NOT in any protected zone (LMMA or MPA). This is likely open ocean or an unprotected area.
+"""
+                    
+                    # Combine all context with user prompt
+                    full_prompt = f"{data_context}{location_context}\n\nUser Question: {prompt}"
                     
                     # Generate response from Gemini
                     response = model.generate_content(full_prompt)
