@@ -949,14 +949,18 @@ elif st.session_state.current_step == 6:
     chat_container = st.container(height=300)
     with chat_container:
         for message in st.session_state.chat_messages:
-            if message["role"] == "captain":
+            # Get timestamp with fallback
+            timestamp = message.get("timestamp", datetime.now().strftime("%H:%M"))
+            content = message.get("content", "")
+
+            if message.get("role") == "captain":
                 st.markdown(
-                    f'<div class="chat-message">{message["content"]} <small>({message["timestamp"]})</small></div>',
+                    f'<div class="chat-message">{content} <small>({timestamp})</small></div>',
                     unsafe_allow_html=True,
                 )
             else:
                 st.markdown(
-                    f'<div class="chat-message user-message">{message["content"]} <small>({message["timestamp"]})</small></div>',
+                    f'<div class="chat-message user-message">{content} <small>({timestamp})</small></div>',
                     unsafe_allow_html=True,
                 )
 
