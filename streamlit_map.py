@@ -1,5 +1,6 @@
 # streamlit_map.py
 import os
+import pandas as pd
 
 from dotenv import load_dotenv
 import geopandas as gpd
@@ -48,63 +49,110 @@ except Exception as e:
     st.error(f"❌ Failed to initialize Gemini AI: {e}")
     st.stop()
 
-# ── load shapefile ────────────────────────────────────────────────────────────
-shapefile_path = "wio_lmma_ioc.shp"
+# ── load shapefiles ───────────────────────────────────────────────────────────
+@st.cache_data(show_spinner="🔄 Loading LMMA data...")
+def load_lmma_data():
+    """Load and preprocess LMMA shapefile"""
+    gdf = gpd.read_file("wio_lmma_ioc.shp")
+    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+    return gdf
 
-if not os.path.exists(shapefile_path):
-    st.error(f"❌ Could not find '{shapefile_path}'. Place all shapefile components in the same directory.")
+@st.cache_data(show_spinner="🔄 Loading MPA data...")
+def load_mpa_data():
+    """Load and preprocess MPA shapefile"""
+    gdf = gpd.read_file("wio_mpa_ioc.shp")
+    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+    return gdf
+
+# Check if files exist
+lmma_shapefile = "wio_lmma_ioc.shp"
+mpa_shapefile = "wio_mpa_ioc.shp"
+
+if not os.path.exists(lmma_shapefile):
+    st.error(f"❌ Could not find '{lmma_shapefile}'. Place all shapefile components in the same directory.")
     st.stop()
 
-gdf = gpd.read_file(shapefile_path)
+if not os.path.exists(mpa_shapefile):
+    st.error(f"❌ Could not find '{mpa_shapefile}'. Place all shapefile components in the same directory.")
+    st.stop()
 
-# ensure WGS84 lat/lon
-if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
-    gdf = gdf.to_crs(epsg=4326)
+# Load data with caching (only loads once, then reuses)
+with st.spinner("🌊 Loading marine conservation data..."):
+    gdf_lmma = load_lmma_data()
+    gdf_mpa = load_mpa_data()
 
-geojson = gdf.__geo_interface__
+# Convert to GeoJSON
+geojson_lmma = gdf_lmma.__geo_interface__
+geojson_mpa = gdf_mpa.__geo_interface__
 
-minx, miny, maxx, maxy = gdf.total_bounds
+# Calculate map center from combined bounds
+all_bounds = gpd.GeoDataFrame(pd.concat([gdf_lmma, gdf_mpa], ignore_index=True))
+minx, miny, maxx, maxy = all_bounds.total_bounds
 mid_lat = (miny + maxy) / 2
 mid_lon = (minx + maxx) / 2
 
 # ── Prepare context about the data for AI ─────────────────────────────────────
-# Get summary statistics
-total_features = len(gdf)
-countries = gdf['Country'].unique().tolist() if 'Country' in gdf.columns else []
-country_counts = gdf['Country'].value_counts().to_dict() if 'Country' in gdf.columns else {}
+# Get summary statistics for LMMAs
+total_lmma = len(gdf_lmma)
+lmma_countries = gdf_lmma['Country'].unique().tolist() if 'Country' in gdf_lmma.columns else []
+lmma_country_counts = gdf_lmma['Country'].value_counts().to_dict() if 'Country' in gdf_lmma.columns else {}
 
-# Get column names and sample data
-columns_info = list(gdf.columns)
-columns_info.remove('geometry') if 'geometry' in columns_info else None
+# Get summary statistics for MPAs
+total_mpa = len(gdf_mpa)
+mpa_countries = gdf_mpa['Country'].unique().tolist() if 'Country' in gdf_mpa.columns else []
+mpa_country_counts = gdf_mpa['Country'].value_counts().to_dict() if 'Country' in gdf_mpa.columns else {}
+
+# Combined statistics
+total_features = total_lmma + total_mpa
+all_countries = sorted(set(lmma_countries + mpa_countries))
 
 # Create context string for AI
 data_context = f"""
-You are an AI assistant helping users understand LMMA (Locally Managed Marine Area) data from the Western Indian Ocean region.
+You are an AI assistant helping users understand marine conservation data from the Western Indian Ocean region.
 
 CURRENT DATA LOADED:
-- Total LMMA features: {total_features}
-- Countries represented: {', '.join(countries)}
+- LMMA features (Locally Managed Marine Areas): {total_lmma} - community-based management
+- MPA features (Marine Protected Areas): {total_mpa} - government-designated protected areas
+- Total features: {total_features}
+- Countries represented: {', '.join(all_countries)}
 - Data coverage: Western Indian Ocean (WIO) region
 - Coordinate bounds: Lat({miny:.2f} to {maxy:.2f}), Lon({minx:.2f} to {maxx:.2f})
 
-COUNTRY BREAKDOWN:
-{chr(10).join([f"- {country}: {count} LMMAs" for country, count in country_counts.items()])}
+LMMA COUNTRY BREAKDOWN:
+{chr(10).join([f"- {country}: {count} LMMAs" for country, count in lmma_country_counts.items()])}
 
-DATA ATTRIBUTES:
-Available fields: {', '.join(columns_info)}
+MPA COUNTRY BREAKDOWN:
+{chr(10).join([f"- {country}: {count} MPAs" for country, count in mpa_country_counts.items()])}
 
-ABOUT LMMAs:
-LMMAs (Locally Managed Marine Areas) are coastal zones where local communities play a key role in managing marine resources. They are important for:
-- Sustainable fisheries management
-- Marine biodiversity conservation
+ABOUT LMMAs (Locally Managed Marine Areas):
+LMMAs are coastal zones where local communities play a key role in managing marine resources. They are characterized by:
 - Community-based resource governance
-- Coastal ecosystem protection
+- Local participation in decision-making
+- Sustainable fisheries management
+- Traditional and customary practices
+- Bottom-up management approach
+
+ABOUT MPAs (Marine Protected Areas):
+MPAs are government-designated protected areas focused on conservation. They are characterized by:
+- Legal protection status
+- Government management and enforcement
+- Biodiversity conservation goals
+- Often stricter regulations
+- Top-down management approach
+
+KEY DIFFERENCES:
+- LMMAs: Community-led, local governance, sustainable use focus
+- MPAs: Government-led, legal protection, conservation focus
+- Both are important for marine ecosystem protection
 
 When answering questions:
-- Be specific about the data when users ask about numbers, countries, or locations
-- Explain marine conservation concepts clearly
-- Reference the actual data when relevant
-- Be helpful and educational about ocean conservation
+- Be specific about LMMA vs MPA when users ask about types
+- Explain the differences clearly when asked
+- Reference actual data numbers for both types
+- Be helpful and educational about marine conservation
+- Clarify which management approach (LMMA or MPA) when relevant
 """
 
 # ── create 2-column layout ────────────────────────────────────────────────────
@@ -114,7 +162,14 @@ col1, col2 = st.columns([6, 4])  # 60% map, 40% chat
 with col1:
     st.subheader("🗺️ Interactive Map")
     
-    # Build Deck.gl map
+    # Add legend
+    st.markdown("""
+    **Legend:**  
+    🔵 **Blue** = LMMAs (Locally Managed Marine Areas) - {0} features  
+    🟢 **Green** = MPAs (Marine Protected Areas) - {1} features
+    """.format(total_lmma, total_mpa))
+    
+    # Build Deck.gl map with two layers
     deck = pdk.Deck(
         map_style="mapbox://styles/mapbox/light-v9",
         initial_view_state=pdk.ViewState(
@@ -124,26 +179,46 @@ with col1:
             pitch=0,
         ),
         layers=[
+            # LMMA Layer (Blue)
             pdk.Layer(
                 "GeoJsonLayer",
-                data=geojson,
+                data=geojson_lmma,
                 stroked=True,
                 filled=True,
                 opacity=0.6,
-                get_fill_color=[82, 170, 225, 120],
+                get_fill_color=[82, 170, 225, 120],  # Ocean Blue
                 get_line_color=[12, 60, 90],
                 line_width_min_pixels=1,
                 pickable=True,
-            )
+            ),
+            # MPA Layer (Green)
+            pdk.Layer(
+                "GeoJsonLayer",
+                data=geojson_mpa,
+                stroked=True,
+                filled=True,
+                opacity=0.6,
+                get_fill_color=[46, 204, 113, 120],  # Emerald Green
+                get_line_color=[22, 160, 133],
+                line_width_min_pixels=1,
+                pickable=True,
+            ),
         ],
-        tooltip={"text": "{Name of LM}\nCountry: {Country}"},
+        tooltip={"text": "LMMA: {Name of LM}\nMPA: {NAME}\nCountry: {Country}"},
     )
     
     st.pydeck_chart(deck, use_container_width=True)
     
-    # Attribute preview
-    with st.expander("📊 View Data Attributes"):
-        st.dataframe(gdf.drop(columns="geometry").head(10))
+    # Data preview tabs
+    tab1, tab2 = st.tabs(["📊 LMMA Data", "📊 MPA Data"])
+    
+    with tab1:
+        st.caption(f"Showing {min(10, len(gdf_lmma))} of {len(gdf_lmma)} LMMA features")
+        st.dataframe(gdf_lmma.drop(columns="geometry").head(10), use_container_width=True)
+    
+    with tab2:
+        st.caption(f"Showing {min(10, len(gdf_mpa))} of {len(gdf_mpa)} MPA features")
+        st.dataframe(gdf_mpa.drop(columns="geometry").head(10), use_container_width=True)
 
 # ── RIGHT COLUMN: Chat ────────────────────────────────────────────────────────
 with col2:
@@ -155,7 +230,7 @@ with col2:
         # Add welcome message with data info
         st.session_state.messages.append({
             "role": "assistant",
-            "content": f"👋 Hello! I'm your AI assistant powered by Google Gemini, and I'm aware of the LMMA data you're viewing.\n\n📊 **Current Data:**\n- **{total_features} LMMA features** loaded\n- **{len(countries)} countries**: {', '.join(countries[:3])}{'...' if len(countries) > 3 else ''}\n- Covering the **Western Indian Ocean** region\n\n💡 **Try asking me:**\n- \"How many LMMAs are in [country name]?\"\n- \"What countries have the most LMMAs?\"\n- \"Explain what an LMMA is\"\n- \"Why are LMMAs important?\""
+            "content": f"👋 Hello! I'm your AI assistant powered by Google Gemini, and I'm aware of the marine conservation data you're viewing.\n\n📊 **Current Data:**\n- **{total_lmma} LMMAs** (Locally Managed Marine Areas)\n- **{total_mpa} MPAs** (Marine Protected Areas)\n- **{len(all_countries)} countries**: {', '.join(all_countries[:4])}{'...' if len(all_countries) > 4 else ''}\n- Covering the **Western Indian Ocean** region\n\n💡 **Try asking me:**\n- \"What's the difference between LMMA and MPA?\"\n- \"How many MPAs are in Seychelles?\"\n- \"Compare Madagascar's LMMAs and MPAs\"\n- \"Why are both types important?\""
         })
     
     # Display chat messages in a container
@@ -217,18 +292,18 @@ with col2:
     st.caption("💡 **Example Questions:**")
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("📊 Data stats", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "What countries have the most LMMAs?"})
+        if st.button("📊 Compare data", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "Compare LMMAs and MPAs in the data"})
             st.rerun()
-        if st.button("🌊 What is LMMA?", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "What is an LMMA and why is it important?"})
+        if st.button("🌊 LMMA vs MPA?", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "What's the difference between LMMA and MPA?"})
             st.rerun()
     with col_b:
-        if st.button("🗺️ Coverage area", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "What geographic area does this data cover?"})
+        if st.button("🇸🇨 Seychelles MPAs", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "Tell me about Seychelles' MPAs"})
             st.rerun()
         if st.button("🐠 Conservation", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": "How do LMMAs help marine conservation?"})
+            st.session_state.messages.append({"role": "user", "content": "Why are both LMMAs and MPAs important?"})
             st.rerun()
     
     st.caption(f"📝 {len(st.session_state.messages)} messages in history")
@@ -236,9 +311,12 @@ with col2:
 # ── Debug Info (collapsible) ──────────────────────────────────────────────────
 with st.expander("🔧 Debug Information"):
     st.write("**Working Directory:**", os.getcwd())
-    st.write("**Shapefile CRS:**", gdf.crs)
+    st.write("**LMMA CRS:**", gdf_lmma.crs)
+    st.write("**MPA CRS:**", gdf_mpa.crs)
     st.write("**Map Center:**", f"Lat: {mid_lat:.4f}, Lon: {mid_lon:.4f}")
-    st.write("**Features Count:**", len(gdf))
+    st.write("**LMMA Features:**", len(gdf_lmma))
+    st.write("**MPA Features:**", len(gdf_mpa))
+    st.write("**Total Features:**", total_features)
     st.write("**Mapbox API:**", "✅ Loaded" if MAPBOX_API_KEY else "❌ Missing")
     st.write("**Gemini API:**", "✅ Loaded" if GEMINI_API_KEY else "❌ Missing")
     st.write("**Gemini Model:**", "gemini-2.5-flash")
