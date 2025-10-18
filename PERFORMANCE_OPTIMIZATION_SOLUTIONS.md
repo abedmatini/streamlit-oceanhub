@@ -2,14 +2,17 @@
 
 ## 🔍 Current Performance Issues
 
-### **Problem:** 
+### **Problem:**
+
 The map is slow to load and hard to interact with, especially:
+
 - Initial page load takes too long
 - Every interaction causes re-rendering
 - Button clicks feel sluggish
 - Chat interactions reload everything
 
 ### **Root Causes:**
+
 1. **GeoJSON conversion happens on every run** (not cached)
 2. **Map layers rebuild on every interaction** (even chat messages)
 3. **Large shapefiles with 499 features** (high polygon complexity)
@@ -21,17 +24,20 @@ The map is slow to load and hard to interact with, especially:
 ## 💡 Optimization Solutions (Ranked by Impact)
 
 ### **Solution 1: Cache GeoJSON Conversion** ⚡⚡⚡ (HIGHEST IMPACT)
+
 **Impact:** 50-70% faster after first load  
 **Difficulty:** Easy  
 **Implementation Time:** 2 minutes
 
 **Problem:** Currently, this runs on EVERY page interaction:
+
 ```python
 geojson_lmma = gdf_lmma.__geo_interface__  # Converts on every rerun!
 geojson_mpa = gdf_mpa.__geo_interface__    # Converts on every rerun!
 ```
 
 **Solution:** Cache the GeoJSON conversion
+
 ```python
 @st.cache_data
 def convert_to_geojson(gdf):
@@ -48,6 +54,7 @@ geojson_mpa = convert_to_geojson(gdf_mpa)
 ---
 
 ### **Solution 2: Simplify Polygon Geometry** ⚡⚡⚡ (HIGHEST IMPACT)
+
 **Impact:** 40-60% faster rendering  
 **Difficulty:** Easy  
 **Implementation Time:** 3 minutes
@@ -55,6 +62,7 @@ geojson_mpa = convert_to_geojson(gdf_mpa)
 **Problem:** Complex polygons with thousands of vertices are slow to render.
 
 **Solution:** Simplify geometries before display
+
 ```python
 @st.cache_data(show_spinner="🔄 Loading LMMA data...")
 def load_lmma_data():
@@ -62,7 +70,7 @@ def load_lmma_data():
     gdf = gpd.read_file("wio_lmma_ioc.shp")
     if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(epsg=4326)
-    
+
     # NEW: Simplify geometry for faster rendering
     gdf['geometry'] = gdf['geometry'].simplify(
         tolerance=0.01,  # Adjust based on zoom level (0.001-0.01)
@@ -77,6 +85,7 @@ def load_lmma_data():
 ---
 
 ### **Solution 3: Use st.fragment for Isolated Updates** ⚡⚡ (HIGH IMPACT)
+
 **Impact:** 70-90% faster chat interactions  
 **Difficulty:** Medium  
 **Implementation Time:** 10 minutes
@@ -84,6 +93,7 @@ def load_lmma_data():
 **Problem:** Every chat message causes the ENTIRE app to rerun (including map!)
 
 **Solution:** Isolate chat in a fragment (Streamlit 1.33+)
+
 ```python
 @st.fragment
 def chat_component():
@@ -98,6 +108,7 @@ def chat_component():
 ---
 
 ### **Solution 4: Lazy Loading - Load Map Data Only Once** ⚡⚡ (HIGH IMPACT)
+
 **Impact:** Instant subsequent loads  
 **Difficulty:** Easy  
 **Implementation Time:** 5 minutes
@@ -105,13 +116,14 @@ def chat_component():
 **Problem:** Map rebuilds even when you're just chatting
 
 **Solution:** Use session state to prevent unnecessary rebuilds
+
 ```python
 # Build map only once
 if 'map_built' not in st.session_state:
     # Build map here
     st.session_state.map_built = True
     st.session_state.map_object = deck
-    
+
 # Reuse cached map
 st.pydeck_chart(st.session_state.map_object, use_container_width=True)
 ```
@@ -119,11 +131,13 @@ st.pydeck_chart(st.session_state.map_object, use_container_width=True)
 ---
 
 ### **Solution 5: Pre-compute Map Bounds and Stats** ⚡ (MEDIUM IMPACT)
+
 **Impact:** 10-20% faster  
 **Difficulty:** Easy  
 **Implementation Time:** 3 minutes
 
 **Problem:** These calculations run on every page load:
+
 ```python
 all_bounds = gpd.GeoDataFrame(pd.concat([gdf_lmma, gdf_mpa], ignore_index=True))
 minx, miny, maxx, maxy = all_bounds.total_bounds
@@ -132,6 +146,7 @@ mid_lon = (minx + maxx) / 2
 ```
 
 **Solution:** Cache these calculations
+
 ```python
 @st.cache_data
 def calculate_map_bounds(gdf_lmma, gdf_mpa):
@@ -148,11 +163,13 @@ mid_lat, mid_lon, minx, miny, maxx, maxy = calculate_map_bounds(gdf_lmma, gdf_mp
 ---
 
 ### **Solution 6: Reduce Initial Zoom/Complexity** ⚡ (LOW IMPACT)
+
 **Impact:** 5-10% faster initial render  
 **Difficulty:** Very Easy  
 **Implementation Time:** 1 minute
 
 **Solution:** Start with lower detail/higher zoom out
+
 ```python
 initial_view_state=pdk.ViewState(
     latitude=mid_lat,
@@ -165,6 +182,7 @@ initial_view_state=pdk.ViewState(
 ---
 
 ### **Solution 7: Conditional Pin Layer** ⚡ (LOW IMPACT)
+
 **Impact:** Prevents unnecessary layer updates  
 **Difficulty:** Already done!  
 **Implementation Time:** 0 minutes
@@ -174,6 +192,7 @@ initial_view_state=pdk.ViewState(
 ---
 
 ### **Solution 8: Use Lighter Map Style** ⚡ (LOW IMPACT)
+
 **Impact:** 5-15% faster rendering  
 **Difficulty:** Very Easy  
 **Implementation Time:** 1 minute
@@ -181,6 +200,7 @@ initial_view_state=pdk.ViewState(
 **Current:** `"mapbox://styles/mapbox/light-v9"`
 
 **Options:**
+
 ```python
 # Fastest (minimal detail)
 map_style="mapbox://styles/mapbox/dark-v10"
@@ -195,6 +215,7 @@ map_style="mapbox://styles/mapbox/light-v9"
 ---
 
 ### **Solution 9: Reduce Polygon Opacity** ⚡ (MINIMAL IMPACT)
+
 **Impact:** Slightly faster GPU rendering  
 **Difficulty:** Very Easy  
 **Implementation Time:** 1 minute
@@ -208,17 +229,19 @@ Less blending = faster rendering on some GPUs.
 ---
 
 ### **Solution 10: Progressive Loading** ⚡⚡ (MEDIUM IMPACT, COMPLEX)
+
 **Impact:** Perceived 50% faster  
 **Difficulty:** Hard  
 **Implementation Time:** 20 minutes
 
 **Concept:** Load LMMA first, then MPA
+
 ```python
 # Step 1: Show LMMA quickly
 with st.spinner("Loading LMMAs..."):
     gdf_lmma = load_lmma_data()
     # Display map with just LMMA
-    
+
 # Step 2: Add MPA layer
 with st.spinner("Adding MPAs..."):
     gdf_mpa = load_mpa_data()
@@ -236,15 +259,19 @@ with st.spinner("Adding MPAs..."):
 Implement in this order for maximum impact:
 
 #### **1. Cache GeoJSON Conversion** (2 min)
+
 ✅ Easiest and high impact
 
 #### **2. Simplify Geometries** (3 min)
+
 ✅ Huge visual performance boost
 
 #### **3. Cache Map Bounds** (3 min)
+
 ✅ Quick optimization
 
-**Expected result after these 3:** 
+**Expected result after these 3:**
+
 - First load: Still ~5-8 seconds
 - Subsequent interactions: <1 second ⚡
 - Chat interactions: Much faster!
@@ -252,14 +279,17 @@ Implement in this order for maximum impact:
 ### **Medium Effort (If Still Slow)** ⚡⚡
 
 #### **4. Use st.fragment for Chat** (10 min)
+
 ✅ Isolate chat from map
 
 #### **5. Lazy Load Map Object** (5 min)
+
 ✅ Build map only once
 
 ### **Advanced (Only if Needed)** ⚡
 
 #### **6. Progressive Loading** (20 min)
+
 Only if users complain about initial load
 
 ---
@@ -267,18 +297,21 @@ Only if users complain about initial load
 ## 📊 Expected Performance Improvements
 
 ### **Before Optimization:**
+
 - First load: 6-10 seconds
 - Chat message: 3-5 seconds (full reload!)
 - Button click: 3-5 seconds (full reload!)
 - Location check: 3-5 seconds
 
 ### **After Quick Wins (1-3):**
+
 - First load: 5-8 seconds (slightly better)
 - Chat message: 0.5-1 second ⚡⚡⚡
 - Button click: 0.5-1 second ⚡⚡⚡
 - Location check: 0.5-1 second ⚡⚡⚡
 
 ### **After All Optimizations:**
+
 - First load: 3-5 seconds ⚡
 - Chat message: <0.5 seconds ⚡⚡⚡
 - Button click: <0.5 seconds ⚡⚡⚡
@@ -289,15 +322,18 @@ Only if users complain about initial load
 ## 🔧 Implementation Priority
 
 ### **Priority 1: Must Do (10 min total)**
+
 1. ✅ Cache GeoJSON conversion
 2. ✅ Simplify geometries
 3. ✅ Cache map bounds
 
 ### **Priority 2: Should Do (15 min total)**
+
 4. ✅ Use st.fragment for chat
 5. ✅ Lazy load map object
 
 ### **Priority 3: Nice to Have**
+
 6. ⏳ Progressive loading
 7. ⏳ Lighter map style
 8. ⏳ Reduce zoom level
@@ -307,16 +343,19 @@ Only if users complain about initial load
 ## ⚠️ Trade-offs to Consider
 
 ### **Geometry Simplification:**
+
 - ✅ Pro: Much faster rendering
 - ❌ Con: Less detailed shapes (but barely noticeable)
 - 💡 Tip: Use tolerance=0.01 for good balance
 
 ### **st.fragment:**
+
 - ✅ Pro: Isolated updates (very fast)
 - ❌ Con: Requires Streamlit 1.33+
 - 💡 Tip: Check version with `streamlit --version`
 
 ### **Lazy Loading:**
+
 - ✅ Pro: Map doesn't rebuild
 - ❌ Con: Map doesn't update if data changes
 - 💡 Tip: Perfect for static data like yours
@@ -328,11 +367,12 @@ Only if users complain about initial load
 **Implement these 3 quick wins (10 minutes total):**
 
 1. **Cache GeoJSON** - 2 min
-2. **Simplify geometry** - 3 min  
+2. **Simplify geometry** - 3 min
 3. **Cache map bounds** - 3 min
 4. **Use st.fragment** - 10 min (if time permits)
 
 **Expected result:**
+
 - ✅ Interactions become instant
 - ✅ Chat doesn't reload map
 - ✅ Button clicks are snappy

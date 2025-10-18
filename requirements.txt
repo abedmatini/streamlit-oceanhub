@@ -1,10 +1,19 @@
-# Core Dependencies for Fish Transformation Chat
+# ============================================================================
+# Requirements for WIO LMMA/MPA Marine Conservation Platform
+# ============================================================================
 
 # Web Framework
 streamlit>=1.28.0
 
-# Google GenAI for image generation
-google-genai>=0.3.0
+# ── Map & Geospatial (for streamlit_map.py) ──
+geopandas>=0.14.0       # Shapefile processing and spatial operations
+shapely>=2.0.0          # Geometry operations (dependency of geopandas)
+pydeck>=0.8.0           # Deck.gl integration for interactive maps
+pandas>=2.0.0           # Data manipulation (dependency of geopandas)
 
-# Environment Variables
-python-dotenv>=1.0.0
+# ── AI & Chat (for both apps) ──
+google-generativeai>=0.3.0  # Gemini AI for streamlit_map.py chat
+google-genai>=0.3.0         # Gemini AI for pages/chat.py image generation
+
+# ── Environment & Configuration ──
+python-dotenv>=1.0.0    # Load API keys from .env file
