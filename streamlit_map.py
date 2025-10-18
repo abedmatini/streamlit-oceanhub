@@ -10,7 +10,7 @@ import google.generativeai as genai
 
 # ── streamlit page setup ──────────────────────────────────────────────────────
 st.set_page_config(page_title="WIO LMMA IOC Map with AI Assistant", layout="wide")
-st.title("🌊 WIO LMMA IOC Map with AI Assistant")
+st.title("🌊 Where is my MPA?")
 
 # ── read API keys from .env ───────────────────────────────────────────────────
 env_path = os.path.join(os.getcwd(), ".env")
