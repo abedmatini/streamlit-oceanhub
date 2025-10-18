@@ -88,6 +88,16 @@ source .venv/bin/activate
 
 ### **Step 3: Install Dependencies**
 
+#### **Option A: Using requirements.txt (Recommended) ⭐**
+
+```bash
+pip install -r requirements.txt
+```
+
+This will automatically install all required packages with correct versions.
+
+#### **Option B: Manual Installation**
+
 ```bash
 pip install python-dotenv geopandas streamlit pydeck google-generativeai
 ```
@@ -101,6 +111,14 @@ pip install python-dotenv geopandas streamlit pydeck google-generativeai
 - `google-generativeai` - Google Gemini AI SDK
 - `pandas` - Data manipulation (comes with geopandas)
 - `shapely` - Geometric operations (comes with geopandas)
+
+#### **Verify Installation:**
+
+```bash
+pip list
+```
+
+You should see all the packages listed above.
 
 ---
 
@@ -209,6 +227,7 @@ The app will automatically open in your default browser at: `http://localhost:85
 ```
 streamlit-oceanhub/
 ├── streamlit_map.py          # Main application (519 lines)
+├── requirements.txt           # Python dependencies
 ├── .env                       # API keys (DO NOT COMMIT)
 ├── readme.md                  # This file
 ├── wio_lmma_ioc.*            # LMMA shapefile components
@@ -219,6 +238,7 @@ streamlit-oceanhub/
     ├── PROJECT_PLAN.md
     ├── PIN_DROP_FEATURE_PLAN.md
     ├── FINAL_TESTING_GUIDE.md
+    ├── PROJECT_STATUS_FINAL.md
     └── ... (15+ documentation files)
 ```
 
@@ -344,17 +364,18 @@ cd streamlit-oceanhub
 # 2. Create virtual environment
 python -m venv .venv
 
-# 3. Activate (Windows)
+# 3. Activate virtual environment
+# Windows:
 .\.venv\Scripts\Activate.ps1
-# OR Activate (macOS/Linux)
+# macOS/Linux:
 source .venv/bin/activate
 
-# 4. Install dependencies
-pip install python-dotenv geopandas streamlit pydeck google-generativeai
+# 4. Install dependencies (RECOMMENDED)
+pip install -r requirements.txt
 
-# 5. Create .env with your API keys
-# MAPBOX_API_KEY=your_key_here
-# GEMINI_API_KEY=your_key_here
+# 5. Create .env file with your API keys
+# MAPBOX_API_KEY=your_mapbox_key_here
+# GEMINI_API_KEY=your_gemini_key_here
 
 # 6. Run the app
 streamlit run streamlit_map.py
