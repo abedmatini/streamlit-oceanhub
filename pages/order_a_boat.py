@@ -926,7 +926,7 @@ elif st.session_state.current_step == 6:
     st.markdown("---")
     st.markdown("### 💬 Communicate with Your Captain")
 
-    # Initialize chat messages if not exists
+    # Initialize chat messages if not exists or validate existing messages
     if not st.session_state.chat_messages:
         # Generate initial welcome message from captain using Gemini
         initial_message = generate_captain_response(
@@ -944,6 +944,15 @@ elif st.session_state.current_step == 6:
                 "timestamp": datetime.now().strftime("%H:%M"),
             }
         ]
+    else:
+        # Validate and fix any messages missing timestamp
+        for msg in st.session_state.chat_messages:
+            if "timestamp" not in msg:
+                msg["timestamp"] = datetime.now().strftime("%H:%M")
+            if "content" not in msg:
+                msg["content"] = ""
+            if "role" not in msg:
+                msg["role"] = "captain"
 
     # Display chat messages
     chat_container = st.container(height=300)
@@ -1066,6 +1075,11 @@ elif st.session_state.current_step == 6:
     # Start Over button for Step 6
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("🧹 Clear Chat", use_container_width=True):
+            # Just clear chat messages
+            st.session_state.chat_messages = []
+            st.rerun()
     with col2:
         if st.button(
             "🔄 Start New Booking", type="secondary", use_container_width=True
