@@ -1,16 +1,14 @@
 # pages/chat.py
 import os
-import base64
-import mimetypes
+import hashlib
 import random
-from io import BytesIO
 import streamlit as st
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(find_dotenv())
 
 # Page configuration
 st.set_page_config(
@@ -77,18 +75,6 @@ st.markdown(
 
 # Google GenAI API configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Manual fallback if load_dotenv fails
-if not GEMINI_API_KEY:
-    try:
-        env_path = os.path.join(os.getcwd(), ".env")
-        with open(env_path, "r") as f:
-            for line in f:
-                if line.strip().startswith("GEMINI_API_KEY="):
-                    GEMINI_API_KEY = line.strip().split("=", 1)[1]
-                    break
-    except Exception as e:
-        pass
 
 if not GEMINI_API_KEY:
     st.error(
@@ -174,10 +160,21 @@ After generating the fish transformation:
         response_text = ""
         response_images = []
 
-        for part in response.candidates[0].content.parts:
-            if part.text is not None:
+        # Defensive checks for API response
+        if not hasattr(response, "candidates") or not response.candidates:
+            raise Exception("No candidates in API response")
+
+        candidate = response.candidates[0]
+        if not hasattr(candidate, "content") or not candidate.content:
+            raise Exception("No content in API response candidate")
+
+        if not hasattr(candidate.content, "parts") or not candidate.content.parts:
+            raise Exception("No parts in API response content")
+
+        for part in candidate.content.parts:
+            if hasattr(part, "text") and part.text is not None:
                 response_text += part.text
-            elif part.inline_data is not None:
+            elif hasattr(part, "inline_data") and part.inline_data is not None:
                 response_images.append(
                     {
                         "data": part.inline_data.data,
@@ -240,10 +237,25 @@ def get_chat_response(prompt):
 
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=[context_prompt],
+            contents=[
+                types.Content(
+                    role="user", parts=[types.Part.from_text(text=context_prompt)]
+                )
+            ],
         )
 
-        return response.candidates[0].content.parts[0].text
+        # Defensive checks for API response
+        if not hasattr(response, "candidates") or not response.candidates:
+            raise Exception("No candidates in API response")
+
+        candidate = response.candidates[0]
+        if not hasattr(candidate, "content") or not candidate.content:
+            raise Exception("No content in API response candidate")
+
+        if not hasattr(candidate.content, "parts") or not candidate.content.parts:
+            raise Exception("No parts in API response content")
+
+        return candidate.content.parts[0].text
 
     except Exception as e:
         return f"I encountered an error generating a response: {str(e)}\n\nPlease try asking something else about MPAs, LMMAs, or marine conservation."
@@ -291,53 +303,62 @@ uploaded_image = st.file_uploader(
 )
 
 # Check if this is a new upload
-if uploaded_image and uploaded_image not in st.session_state.get(
-    "processed_images", []
-):
-    # Add to processed images to prevent reprocessing
-    if "processed_images" not in st.session_state:
-        st.session_state.processed_images = []
-    st.session_state.processed_images.append(uploaded_image)
+if uploaded_image:
+    # Check file size (limit to 10MB)
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
+    if uploaded_image.size > MAX_FILE_SIZE:
+        st.error(
+            f"❌ File too large! Please upload an image smaller than 10MB. Your file is {uploaded_image.size / (1024*1024):.1f}MB."
+        )
+        st.stop()
 
-    # Read the uploaded image
+    # Compute hash of image bytes for deterministic identification
     image_bytes = uploaded_image.read()
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
 
-    # Add user message
-    st.session_state.chat_messages.append(
-        {
-            "role": "user",
-            "content": "🎨 Transform me into a marine protector fish!",
-            "images": [{"data": image_bytes, "caption": "My Photo"}],
-        }
-    )
+    # Check if this image has already been processed
+    if image_hash not in st.session_state.get("processed_images", set()):
+        # Add to processed images to prevent reprocessing
+        if "processed_images" not in st.session_state:
+            st.session_state.processed_images = set()
+        st.session_state.processed_images.add(image_hash)
 
-    # Transform image automatically
-    with st.spinner("🐠 Transforming you into a marine protector fish..."):
-        response_text, response_images, error = transform_image_to_fish(
-            image_bytes, uploaded_image
+        # Add user message
+        st.session_state.chat_messages.append(
+            {
+                "role": "user",
+                "content": "🎨 Transform me into a marine protector fish!",
+                "images": [{"data": image_bytes, "caption": "My Photo"}],
+            }
         )
 
-        if response_text and response_images:
-            # Add assistant response with AI-generated content
-            st.session_state.chat_messages.append(
-                {
-                    "role": "assistant",
-                    "content": response_text,
-                    "images": response_images,
-                }
+        # Transform image automatically
+        with st.spinner("🐠 Transforming you into a marine protector fish..."):
+            response_text, response_images, error = transform_image_to_fish(
+                image_bytes, uploaded_image
             )
 
-        elif error:
-            error_msg = f"❌ Oops! Something went wrong with the transformation: {error}\n\nPlease try uploading a different photo or try again later."
-            st.session_state.chat_messages.append(
-                {"role": "assistant", "content": error_msg, "images": []}
-            )
-        else:
-            # Fallback response if no content generated
-            mpa_fact = random.choice(MPA_FACTS)
-            lmma_fact = random.choice(LMMA_FACTS)
+            if response_text and response_images:
+                # Add assistant response with AI-generated content
+                st.session_state.chat_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response_text,
+                        "images": response_images,
+                    }
+                )
 
-            fallback_response = f"""🐠 **We had some trouble with the transformation, but here's some marine conservation info!**
+            elif error:
+                error_msg = f"❌ Oops! Something went wrong with the transformation: {error}\n\nPlease try uploading a different photo or try again later."
+                st.session_state.chat_messages.append(
+                    {"role": "assistant", "content": error_msg, "images": []}
+                )
+            else:
+                # Fallback response if no content generated
+                mpa_fact = random.choice(MPA_FACTS)
+                lmma_fact = random.choice(LMMA_FACTS)
+
+                fallback_response = f"""🐠 **We had some trouble with the transformation, but here's some marine conservation info!**
 
 ---
 
@@ -356,23 +377,24 @@ if uploaded_image and uploaded_image not in st.session_state.get(
 
 Feel free to ask me more about MPAs, LMMAs, or marine conservation!"""
 
-            st.session_state.chat_messages.append(
-                {
-                    "role": "assistant",
-                    "content": fallback_response,
-                    "images": [],
-                }
+                st.session_state.chat_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": fallback_response,
+                        "images": [],
+                    }
+                )
+
+        st.rerun()
+    else:
+        # Show the uploaded image preview for already processed images
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.image(uploaded_image, caption="Your Original Photo", width=300)
+        with col2:
+            st.success(
+                "✅ Photo uploaded! Check the chat below for your transformation!"
             )
-
-    st.rerun()
-
-elif uploaded_image:
-    # Show the uploaded image preview
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.image(uploaded_image, caption="Your Original Photo", width=300)
-    with col2:
-        st.success("✅ Photo uploaded! Check the chat below for your transformation!")
 
 # Chat interface with improved styling
 st.markdown(
@@ -440,7 +462,7 @@ col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     if st.button("🔄 Clear Chat", use_container_width=True):
         st.session_state.chat_messages = []
-        st.session_state.processed_images = []
+        st.session_state.processed_images = set()
         st.rerun()
 
 # Add information about marine protection
