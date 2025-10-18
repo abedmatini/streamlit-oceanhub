@@ -1,27 +1,10 @@
-# Core Dependencies for WIO Marine Conservation Map with AI Assistant
+# Core Dependencies for Fish Transformation Chat
 
 # Web Framework
 streamlit>=1.28.0
 
-# Geospatial Data Processing
-geopandas>=0.14.0
-shapely>=2.0.0
-
-# Map Visualization
-pydeck>=0.8.0
-
-# AI Integration
-google-generativeai>=0.3.0
+# Google GenAI for image generation
+google-genai>=0.3.0
 
 # Environment Variables
 python-dotenv>=1.0.0
-
-# Data Manipulation (comes with geopandas but explicit for clarity)
-pandas>=2.0.0
-
-# Note: These packages will also install their dependencies:
-# - numpy (for numerical operations)
-# - pyproj (for coordinate transformations)
-# - fiona (for shapefile reading)
-# - matplotlib (for plotting, if needed)
-# - and others required by geopandas
